@@ -1,0 +1,308 @@
+﻿@{ ViewBag.Title = "South Australia Reservoir Volumes"; }
+
+@section styles {
+    <style>
+        /* Place temporary CSS here them move to Site.css when happy =) */
+    </style>
+}
+
+
+<!-- Do NOT change this html.  All work must be done via the script element -->
+<div class="row">
+    <div class="col-5">
+        <div class="border rounded border-info p-1" id="reservoirList">
+            <h3 class="text-center">Reservoir List</h3>
+        </div>
+    </div>
+    <div class="col-7" id="graphs">
+
+    </div>
+</div>
+
+
+@section scripts {
+    <script src="~/Scripts/popper.js"></script>
+    <script>
+
+
+        // write your JavaScript here
+        // example request provided
+
+        var $request = $.ajax({
+            url: '/api/Reservoirs',
+            method: 'GET',
+            dataType: 'json',
+            crossDomain: true,
+            timeout: 10000,
+            success: success,
+            error: error
+        })
+
+
+
+        function success(response) {
+            //create table tag and append to reservoir
+            //<div> element is added to graphs 
+            var $ul = $("<table>").addClass("table table-striped table-hover").appendTo("#reservoirList");
+            var $row = $('<div>').addClass('row').appendTo("#graphs");
+            //this heading will show when no row is selected
+            $('<h3>').text("No reservoir selected, Please Choose One").appendTo('#graphs');
+
+            //append thead to <table> element and and append <tr> to thead
+            //three th elements are added to tr
+            var $head = $ul.append('<thead>').children("thead")
+                .append('<tr/>').children("tr")
+            $('<th>').text("Name").appendTo($head);
+            $('<th>').text("Capacity ML").appendTo($head);
+            $('<th>').appendTo($head);
+
+            //tbody is created and append to table 
+            //.childern get the childern of the set element
+            var $body = $ul.append("<tbody/>").children("tbody");
+
+            //loop through each JSON object
+            $.each(response, function (i, obj) {
+                var $row = $body.append('<tr/>')
+                    .children("tr:last")
+                    .attr("title", "Click to view " + obj.reservoirDetail.reservoirName + " capacity data from 2018 to 2020 (" + obj.records + " records)")
+                    .on('click', function () {
+                        selectedReservoir(obj);
+                    })
+                $('<td>').text(obj.reservoirDetail.reservoirName).appendTo($row);
+                $('<td>').text(obj.reservoirDetail.capacityML).appendTo($row);
+                var $link = $('<td>').appendTo($row);
+
+                $('<a>').addClass("btn btn-primary").attr({
+                    href: "https://www.google.com/maps/place/" + obj.reservoirDetail.reservoirName,
+                    target: "_blank"
+                }).text("View Map").appendTo($link);
+
+                $(".table-striped").on('click', 'tbody tr', function () {
+                    $(this).addClass('bg-success').siblings().removeClass('bg-success');
+                    
+
+                });
+
+            })
+
+
+
+            $(function () {
+                $(this).tooltip();
+            })
+        }
+
+
+        function error(data) {
+            $('#reservoirList').text('Error, Failed to load - ' + data.statusText);
+        }
+
+        function selectedReservoir(selectedID) {
+            var $request = $.ajax({
+                url: '/api/Reservoirs/' + selectedID.reservoirDetail.reservoirID,
+                method: 'GET',
+                dataType: 'json',
+                crossDomain: true,
+                success: success,
+                error: error,
+                timeout: 10000
+            })
+
+            function success(response) {
+                var $parent = $("#graphs .row").empty();
+                $.each(response, function (i, obj) {
+                 
+                    var $cardPar = $('<div>')
+                        .addClass('card col-lg-12')
+
+                        .on('click', function (e) {
+                            $(this).addClass('highlight').siblings().removeClass('highlight');
+                            
+                            $('.graphs' + i).slideToggle("slow");
+
+                            selectedYear(selectedID.reservoirDetail.reservoirID, obj.year, i, selectedID.reservoirDetail.reservoirName);
+                        })
+                        .appendTo("#graphs .row");
+
+
+                    $perper = $('<div>').addClass("card-body").appendTo($cardPar);
+
+                    $('<h2>').text(obj.year).attr("title", "Click to view volume detail").addClass("card-title").appendTo($perper);
+                    $('<span>').text("Records: " + obj.records).appendTo($perper);
+
+                    $('<span>').text(" dating from " + obj.firstMonthName + " to " + obj.lastMonthName + "\n").appendTo($perper);
+                    $('<p>').addClass("hello").text("Avg Volume: " + obj.avgVolume + " ML").appendTo($perper);
+                    var $vv = $('<div>').addClass("col-lg-12 graphs" + i).appendTo($perper);
+
+                })
+
+            }
+
+            function error() {
+                $('#graphs').text('Error, Failed to load - ' + data.statusText);
+            }
+        }
+
+
+        function selectedYear(selectedID, selectedYear, index, resName) {
+            var $request = $.ajax({
+                url: '/api/Reservoirs/' + selectedID + "?year=" + selectedYear,
+                method: 'GET',
+                dataType: 'json',
+                success: buildReport,
+                error: error,
+                crossDomain: true,
+                timeout: 10000
+            })
+
+            function buildReport(data) {
+                $('svg').remove();
+                $('h3').remove();
+                $('<h3>').text(resName + " in " + selectedYear).addClass('graph-label').appendTo(".graphs" + index);
+                var addSvg = d3.select(".graphs" + index)
+                    .append('svg')
+                    .attr('width', '100%')
+                    .attr('height', '470')
+                    .style('border', '1px solid #000');
+
+
+
+                var svg = d3.select("svg");
+
+                var w = $('svg').width();
+                var h = $('svg').height();
+                console.log(w);
+                console.log(h);
+
+                var chartMargin = new Object();
+                chartMargin.left = 60;
+                chartMargin.right = 25;
+                chartMargin.top = 40;
+                chartMargin.bottom = 20;
+
+
+                var maxVolume = d3.max(data, function (d) { return d.avgVolume; })
+                h = h - chartMargin.bottom - chartMargin.top;
+                var barMargin = 10;
+                var barWidth = (w - chartMargin.left - chartMargin.right) / data.length;
+
+                var barHeight = (h - chartMargin.bottom - chartMargin.top) / data.length;
+
+                w = w - chartMargin.left - chartMargin.right;
+
+                var ss = data.map(function (d) { return d.recordDate; });
+                var hello = ss[0].substring(5, 10);
+                //console.log(hello);
+
+
+                var yScale = d3.scaleBand()
+                    .domain(data.map(function (d) {
+                        var ss = d.recordDate
+                        var hello = d.monthName + ss.substring(5, 10)
+                        var final = hello.substring(0, 3) + ss.substring(8, 10)
+
+                        return final;
+                    }))
+                    .range([0, h - chartMargin.top - chartMargin.bottom])
+                    .paddingInner(0.05);
+
+                var xScale = d3.scaleLinear()
+                    .domain([0, maxVolume])
+                    .range([w, 0]);
+
+
+                var chartGroup = svg.append('g')
+                    .classed('chartGroup', true)
+                    .attr('transform', 'translate(' + chartMargin.left + ',' + chartMargin.top + ')')
+
+
+                var barGroups = chartGroup
+                    .selectAll('g')
+                    .data(data);
+
+                var newBarGroups = barGroups.enter()
+                    .append('g')
+                    .attr('transform', function (d, i) {
+                        var ss = d.recordDate
+
+                        var hello = d.monthName
+
+                        var final = hello.substring(0, 3) + ss.substring(8, 10)
+
+                        return 'translate('
+                            + 0
+                            + ','
+                            + (yScale(final))
+                            + ')';
+                    })
+
+
+
+
+                var yAxis = d3.axisLeft(yScale);
+                chartGroup.append('g')
+                    .classed('axis y', true)
+                    .call(yAxis);
+
+                var xAxis = d3.axisBottom(xScale);
+                chartGroup.append('g')
+                    .attr('transform', 'translate(0,' + (h - 60) + ')')
+                    .classed('axisx', true)
+                    .call(xAxis);
+
+                svg.append("text")
+                    .attr("transform", 'translate(250,' + (w - 70) + ')')
+                    .style('text-anchor', "middle")
+                    .text("Capacity ML");
+
+
+                svg.append("text")
+                    .attr("transform", 'translate(40,' + (chartMargin.top - 10) + ')')
+                    .style('text-anchor', "middle")
+                    .text("Month");
+
+
+                newBarGroups
+                    .append('rect')
+                    .attr('x', 0)
+                    .attr('height', barHeight - barMargin)
+                    .attr('width', function (d, i) { return w - xScale(d.avgVolume); })
+                    .attr("title", function (d, i) { return d.avgVolume; })
+                    .style('fill', 'transparent')
+                    .transition().duration(function (d, i) { return i * 1000; })
+                    .delay(function (d, i) { return i + 400; })
+                    .style("fill", function (d, index) {
+                        return "hsl(27,73%," + (d.avgVolume / maxVolume * 80) + "%)"
+                    })
+                    .attr('fill', 'black');
+
+
+                newBarGroups
+                    .append('text')
+                    .attr('text-anchor', "middle")
+                    .attr('x', function (d, i) { return (w - xScale(d.avgVolume)) - 40; })
+                    .attr('y', function () { return yScale.bandwidth() / 2; })
+                    .attr('fill', 'white')
+                    .text(function (d, i) { return d.avgVolume.toLocaleString(); })
+                    .style('font-size', '12px');
+
+
+
+
+
+            }
+
+            function error(data) {
+                $('#graphs').text('Error, Failed to load - ' + data.statusText);
+            }
+
+        }
+
+
+
+
+
+
+    </script>
+}
+
